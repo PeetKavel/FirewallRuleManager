@@ -1,0 +1,159 @@
+@page "/git-settings"
+@using FirewallRuleManager.Shared.DTOs
+@using FirewallRuleManager.Web.Services
+@inject GitRepositoryService GitService
+@rendermode InteractiveServer
+
+<PageTitle>Git Settings - Firewall Rule Manager</PageTitle>
+
+<div class="page-header">
+    <h1>⚙️ Git Repository Settings</h1>
+    <p>Configure where your firewall rules are stored and synced.</p>
+</div>
+
+@if (!string.IsNullOrEmpty(_successMessage))
+{
+    <div class="alert alert-success alert-dismissible d-flex gap-2 align-items-center">
+        ✅ @_successMessage
+        <button class="btn-close ms-auto" @onclick="() => _successMessage = null"></button>
+    </div>
+}
+
+<div class="row g-4">
+    <div class="col-lg-5">
+        <div class="card">
+            <div class="card-header">Repository Status</div>
+            <div class="card-body">
+                @if (_config == null)
+                {
+                    <div class="text-center py-3">
+                        <div class="spinner-border text-primary"></div>
+                    </div>
+                }
+                else
+                {
+                    <div class="mb-3">
+                        <span class="git-status-badge @(_config.IsConfigured ? "git-status-connected" : "git-status-disconnected")">
+                            @if (_config.IsConfigured) { <span>●</span> <span>Connected</span> }
+                            else { <span>○</span> <span>Not Configured</span> }
+                        </span>
+                    </div>
+
+                    @if (_config.IsConfigured)
+                    {
+                        <table class="table table-sm table-borderless mb-0">
+                            <tr>
+                                <th class="text-muted" style="width:40%">Local Path</th>
+                                <td><code class="small">@(_config.RepositoryPath ?? "-")</code></td>
+                            </tr>
+                            <tr>
+                                <th class="text-muted">GitHub Owner</th>
+                                <td>@(_config.GitHubOwner ?? "-")</td>
+                            </tr>
+                            <tr>
+                                <th class="text-muted">Repository</th>
+                                <td>@(_config.GitHubRepoName ?? "-")</td>
+                            </tr>
+                            <tr>
+                                <th class="text-muted">GitHub Token</th>
+                                <td>
+                                    @if (!string.IsNullOrEmpty(_config.GitHubToken))
+                                    { <span class="badge bg-success">Configured</span> }
+                                    else
+                                    { <span class="badge bg-secondary">Not set</span> }
+                                </td>
+                            </tr>
+                        </table>
+                    }
+                }
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-7">
+        <div class="card">
+            <div class="card-header">@(_config?.IsConfigured == true ? "Update Configuration" : "Create Repository")</div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">Repository Name <span class="text-danger">*</span></label>
+                    <input class="form-control" @bind="_request.RepositoryName" placeholder="firewall-rules" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Description</label>
+                    <input class="form-control" @bind="_request.Description" placeholder="Firewall rules backup repository" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Local Path</label>
+                    <input class="form-control" @bind="_request.LocalPath" placeholder="Leave empty for default location" />
+                    <div class="form-text">Path where the local git repository will be initialized.</div>
+                </div>
+                <hr />
+                <p class="text-muted small">Connect to GitHub to push rules automatically on every change.</p>
+                <div class="mb-3">
+                    <label class="form-label">GitHub Personal Access Token</label>
+                    <input type="password" class="form-control" @bind="_request.GitHubToken" placeholder="ghp_..." />
+                    <div class="form-text">Needs <code>repo</code> scope. <a href="https://github.com/settings/tokens" target="_blank" rel="noopener">Create token ↗</a></div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">GitHub Owner</label>
+                    <input class="form-control" @bind="_request.GitHubOwner" placeholder="your-username or org-name" />
+                </div>
+                <div class="mb-3 form-check">
+                    <input type="checkbox" class="form-check-input" id="privateRepoSettings" @bind="_request.IsPrivate" />
+                    <label class="form-check-label" for="privateRepoSettings">Create as private repository</label>
+                </div>
+
+                @if (!string.IsNullOrEmpty(_errorMessage))
+                {
+                    <div class="alert alert-danger py-2">❌ @_errorMessage</div>
+                }
+
+                <button class="btn btn-primary w-100" @onclick="CreateOrUpdate" disabled="@_saving">
+                    @if (_saving) { <span class="spinner-border spinner-border-sm me-2"></span> }
+                    @(_config?.IsConfigured == true ? "Update Configuration" : "Initialize Repository")
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private GitRepositoryConfig? _config;
+    private CreateRepositoryRequest _request = new() { RepositoryName = "firewall-rules", IsPrivate = true };
+    private bool _saving = false;
+    private string? _successMessage;
+    private string? _errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _config = await GitService.GetStatusAsync();
+        if (_config != null)
+        {
+            _request.RepositoryName = _config.GitHubRepoName ?? "firewall-rules";
+            _request.LocalPath = _config.RepositoryPath ?? string.Empty;
+            _request.GitHubOwner = _config.GitHubOwner ?? string.Empty;
+        }
+    }
+
+    private async Task CreateOrUpdate()
+    {
+        if (string.IsNullOrWhiteSpace(_request.RepositoryName))
+        {
+            _errorMessage = "Repository name is required.";
+            return;
+        }
+        _saving = true;
+        _errorMessage = null;
+        var (config, error) = await GitService.CreateRepositoryAsync(_request);
+        _saving = false;
+        if (config != null)
+        {
+            _config = config;
+            _successMessage = "Repository configured successfully!";
+        }
+        else
+        {
+            _errorMessage = error ?? "Failed to configure repository.";
+        }
+    }
+}

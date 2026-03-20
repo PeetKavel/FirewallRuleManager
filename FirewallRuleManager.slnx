@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/FirewallRuleManager.Api/FirewallRuleManager.Api.csproj" />
+    <Project Path="src/FirewallRuleManager.Shared/FirewallRuleManager.Shared.csproj" />
+    <Project Path="src/FirewallRuleManager.Web/FirewallRuleManager.Web.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,37 @@
+<div class="top-row ps-3 navbar navbar-dark nav-sidebar">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="">
+            🛡️ Firewall Rule Manager
+        </a>
+    </div>
+</div>
+
+<input type="checkbox" title="Navigation menu" class="navbar-toggler" />
+
+<div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
+    <nav class="nav flex-column py-2">
+        <div class="nav-item px-2">
+            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
+                <span aria-hidden="true">🏠</span> Dashboard
+            </NavLink>
+        </div>
+
+        <div class="nav-item px-2">
+            <NavLink class="nav-link" href="firewall-rules">
+                <span aria-hidden="true">📋</span> Firewall Rules
+            </NavLink>
+        </div>
+
+        <div class="nav-item px-2">
+            <NavLink class="nav-link" href="import">
+                <span aria-hidden="true">📥</span> Import Excel
+            </NavLink>
+        </div>
+
+        <div class="nav-item px-2">
+            <NavLink class="nav-link" href="git-settings">
+                <span aria-hidden="true">⚙️</span> Git Settings
+            </NavLink>
+        </div>
+    </nav>
+</div>

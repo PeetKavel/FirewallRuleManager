@@ -1,0 +1,298 @@
+@page "/firewall-rules"
+@using FirewallRuleManager.Shared.Models
+@using FirewallRuleManager.Web.Services
+@inject FirewallRuleService RuleService
+@rendermode InteractiveServer
+
+<PageTitle>Firewall Rules - Firewall Rule Manager</PageTitle>
+
+<div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <div>
+        <h1>📋 Firewall Rules</h1>
+        <p>Manage all firewall rules. Changes are committed to Git.</p>
+    </div>
+    <button class="btn btn-light fw-semibold" @onclick="ShowCreateForm">
+        ＋ Add Rule
+    </button>
+</div>
+
+@if (!string.IsNullOrEmpty(_successMessage))
+{
+    <div class="alert alert-success alert-dismissible d-flex align-items-center gap-2">
+        ✅ @_successMessage
+        <button type="button" class="btn-close ms-auto" @onclick="() => _successMessage = null"></button>
+    </div>
+}
+
+@if (!string.IsNullOrEmpty(_errorMessage))
+{
+    <div class="alert alert-danger alert-dismissible d-flex align-items-center gap-2">
+        ❌ @_errorMessage
+        <button type="button" class="btn-close ms-auto" @onclick="() => _errorMessage = null"></button>
+    </div>
+}
+
+@* Rule Form Modal *@
+@if (_showForm)
+{
+    <div class="modal-overlay">
+        <div class="modal-dialog-custom" style="max-width:620px;">
+            <h5 class="mb-4">@(_editingRule == null ? "Add New Rule" : "Edit Rule")</h5>
+            <EditForm Model="_formModel" OnValidSubmit="SaveRule">
+                <DataAnnotationsValidator />
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">From Hostname <span class="text-danger">*</span></label>
+                        <InputText class="form-control" @bind-Value="_formModel.FromHostname" placeholder="e.g. server-a.internal" />
+                        <ValidationMessage For="() => _formModel.FromHostname" class="validation-message" />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">To Hostname <span class="text-danger">*</span></label>
+                        <InputText class="form-control" @bind-Value="_formModel.ToHostname" placeholder="e.g. db.internal" />
+                        <ValidationMessage For="() => _formModel.ToHostname" class="validation-message" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Port <span class="text-danger">*</span></label>
+                        <InputNumber class="form-control" @bind-Value="_formModel.PortNumber" placeholder="e.g. 443" />
+                        <ValidationMessage For="() => _formModel.PortNumber" class="validation-message" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Protocol <span class="text-danger">*</span></label>
+                        <InputSelect class="form-select" @bind-Value="_formModel.Protocol">
+                            <option value="TCP">TCP</option>
+                            <option value="UDP">UDP</option>
+                            <option value="ICMP">ICMP</option>
+                            <option value="ANY">ANY</option>
+                        </InputSelect>
+                        <ValidationMessage For="() => _formModel.Protocol" class="validation-message" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Registration Date <span class="text-danger">*</span></label>
+                        <InputDate class="form-control" @bind-Value="_formModel.RegistrationDate" />
+                        <ValidationMessage For="() => _formModel.RegistrationDate" class="validation-message" />
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Description</label>
+                        <InputTextArea class="form-control" @bind-Value="_formModel.Description" rows="2" placeholder="Optional description..." />
+                        <ValidationMessage For="() => _formModel.Description" class="validation-message" />
+                    </div>
+                </div>
+                <div class="d-flex gap-2 justify-content-end mt-4">
+                    <button type="button" class="btn btn-secondary" @onclick="HideForm">Cancel</button>
+                    <button type="submit" class="btn btn-primary" disabled="@_saving">
+                        @if (_saving) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                        Save Rule
+                    </button>
+                </div>
+            </EditForm>
+        </div>
+    </div>
+}
+
+@* Delete Confirm *@
+@if (_deleteConfirmRule != null)
+{
+    <div class="modal-overlay">
+        <div class="modal-dialog-custom" style="max-width:420px;">
+            <h5 class="mb-3">🗑️ Delete Rule</h5>
+            <p>Are you sure you want to delete the rule:</p>
+            <div class="p-3 bg-light rounded mb-3">
+                <strong>@_deleteConfirmRule.FromHostname</strong> →
+                <strong>@_deleteConfirmRule.ToHostname</strong>:<strong>@_deleteConfirmRule.PortNumber</strong>
+            </div>
+            <div class="d-flex gap-2 justify-content-end">
+                <button class="btn btn-secondary" @onclick="() => _deleteConfirmRule = null">Cancel</button>
+                <button class="btn btn-danger" @onclick="ConfirmDelete" disabled="@_deleting">
+                    @if (_deleting) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                    Delete
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span>Rules (@_rules.Count total)</span>
+        <div class="d-flex gap-2">
+            <input class="form-control form-control-sm" style="width:200px;" placeholder="Search..." @bind="_searchTerm" @bind:event="oninput" />
+        </div>
+    </div>
+    <div class="card-body p-0">
+        @if (_loading)
+        {
+            <div class="text-center py-4">
+                <div class="spinner-border text-primary"></div>
+            </div>
+        }
+        else if (FilteredRules.Count == 0)
+        {
+            <div class="text-center py-5 text-muted">
+                <div style="font-size:2.5rem;">📭</div>
+                <p>@(_rules.Count == 0 ? "No rules found. Click \"Add Rule\" to create one." : "No rules match your search.")</p>
+            </div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th>From Hostname</th>
+                            <th>To Hostname</th>
+                            <th>Port</th>
+                            <th>Protocol</th>
+                            <th>Description</th>
+                            <th>Date</th>
+                            <th style="width:120px;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var rule in FilteredRules)
+                        {
+                            <tr>
+                                <td>@rule.FromHostname</td>
+                                <td>@rule.ToHostname</td>
+                                <td><code>@rule.PortNumber</code></td>
+                                <td>
+                                    <span class="badge-protocol badge-@rule.Protocol.ToLower()">@rule.Protocol</span>
+                                </td>
+                                <td>
+                                    <span class="text-truncate d-block" style="max-width:180px;" title="@rule.Description">
+                                        @rule.Description
+                                    </span>
+                                </td>
+                                <td>@rule.RegistrationDate.ToString("yyyy-MM-dd")</td>
+                                <td>
+                                    <div class="d-flex gap-1 btn-group-actions">
+                                        <button class="btn btn-sm btn-outline-primary" @onclick="() => ShowEditForm(rule)" title="Edit">✏️</button>
+                                        <button class="btn btn-sm btn-outline-danger" @onclick="() => AskDelete(rule)" title="Delete">🗑️</button>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private List<FirewallRule> _rules = new();
+    private bool _loading = true;
+    private bool _showForm = false;
+    private bool _saving = false;
+    private bool _deleting = false;
+    private FirewallRule _formModel = new() { RegistrationDate = DateTime.Today };
+    private FirewallRule? _editingRule;
+    private FirewallRule? _deleteConfirmRule;
+    private string? _successMessage;
+    private string? _errorMessage;
+    private string _searchTerm = string.Empty;
+
+    private List<FirewallRule> FilteredRules => string.IsNullOrWhiteSpace(_searchTerm)
+        ? _rules
+        : _rules.Where(r =>
+            r.FromHostname.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase) ||
+            r.ToHostname.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase) ||
+            r.Protocol.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase) ||
+            r.PortNumber.ToString().Contains(_searchTerm) ||
+            (r.Description?.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase) == true)
+        ).ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadRules();
+    }
+
+    private async Task LoadRules()
+    {
+        _loading = true;
+        try { _rules = await RuleService.GetAllAsync(); }
+        catch (Exception ex) { _errorMessage = $"Failed to load rules: {ex.Message}"; }
+        finally { _loading = false; }
+    }
+
+    private void ShowCreateForm()
+    {
+        _editingRule = null;
+        _formModel = new FirewallRule { RegistrationDate = DateTime.Today, Protocol = "TCP" };
+        _showForm = true;
+    }
+
+    private void ShowEditForm(FirewallRule rule)
+    {
+        _editingRule = rule;
+        _formModel = new FirewallRule
+        {
+            Id = rule.Id,
+            FromHostname = rule.FromHostname,
+            ToHostname = rule.ToHostname,
+            PortNumber = rule.PortNumber,
+            Description = rule.Description,
+            Protocol = rule.Protocol,
+            RegistrationDate = rule.RegistrationDate
+        };
+        _showForm = true;
+    }
+
+    private void HideForm() => _showForm = false;
+
+    private async Task SaveRule()
+    {
+        _saving = true;
+        _errorMessage = null;
+        try
+        {
+            if (_editingRule == null)
+            {
+                var created = await RuleService.CreateAsync(_formModel);
+                if (created != null)
+                {
+                    _successMessage = $"Rule created: {created.FromHostname} → {created.ToHostname}:{created.PortNumber}";
+                    _showForm = false;
+                    await LoadRules();
+                }
+                else { _errorMessage = "Failed to create rule."; }
+            }
+            else
+            {
+                var updated = await RuleService.UpdateAsync(_editingRule.Id, _formModel);
+                if (updated != null)
+                {
+                    _successMessage = "Rule updated successfully.";
+                    _showForm = false;
+                    await LoadRules();
+                }
+                else { _errorMessage = "Failed to update rule."; }
+            }
+        }
+        catch (Exception ex) { _errorMessage = $"Error: {ex.Message}"; }
+        finally { _saving = false; }
+    }
+
+    private void AskDelete(FirewallRule rule) => _deleteConfirmRule = rule;
+
+    private async Task ConfirmDelete()
+    {
+        if (_deleteConfirmRule == null) return;
+        _deleting = true;
+        try
+        {
+            var ok = await RuleService.DeleteAsync(_deleteConfirmRule.Id);
+            if (ok)
+            {
+                _successMessage = "Rule deleted successfully.";
+                _rules.Remove(_deleteConfirmRule);
+            }
+            else { _errorMessage = "Failed to delete rule."; }
+        }
+        catch (Exception ex) { _errorMessage = $"Error: {ex.Message}"; }
+        finally
+        {
+            _deleting = false;
+            _deleteConfirmRule = null;
+        }
+    }
+}
