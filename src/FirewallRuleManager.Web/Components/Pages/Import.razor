@@ -1,0 +1,195 @@
+@page "/import"
+@using FirewallRuleManager.Shared.DTOs
+@using FirewallRuleManager.Web.Services
+@inject ImportService ImportSvc
+@rendermode InteractiveServer
+
+<PageTitle>Import Excel - Firewall Rule Manager</PageTitle>
+
+<div class="page-header">
+    <h1>📥 Import from Excel</h1>
+    <p>Upload an Excel file (.xlsx) to bulk-import firewall rules.</p>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-6">
+        <div class="card h-100">
+            <div class="card-header">Upload Excel File</div>
+            <div class="card-body">
+                <div class="mb-4 p-3 bg-light rounded">
+                    <strong>📊 Required columns (in order):</strong>
+                    <ol class="mt-2 mb-0 small">
+                        <li>From Hostname <span class="text-danger">*</span></li>
+                        <li>To Hostname <span class="text-danger">*</span></li>
+                        <li>Port Number <span class="text-danger">*</span> (1–65535)</li>
+                        <li>Description (optional)</li>
+                        <li>Protocol <span class="text-danger">*</span> (TCP / UDP / ICMP / ANY)</li>
+                        <li>Registration Date <span class="text-danger">*</span></li>
+                    </ol>
+                    <div class="mt-2 small text-muted">Row 1 is treated as a header and skipped.</div>
+                </div>
+
+                <InputFile OnChange="HandleFileSelected" accept=".xlsx,.xls" class="form-control mb-3" />
+
+                @if (_selectedFile != null)
+                {
+                    <div class="d-flex align-items-center gap-2 mb-3 p-2 bg-light rounded">
+                        <span>📄</span>
+                        <div>
+                            <div class="fw-semibold">@_selectedFile.Name</div>
+                            <div class="text-muted small">@FormatBytes(_selectedFile.Size)</div>
+                        </div>
+                    </div>
+                }
+
+                <button class="btn btn-primary w-100" @onclick="ImportFile"
+                        disabled="@(_selectedFile == null || _importing)">
+                    @if (_importing)
+                    {
+                        <span class="spinner-border spinner-border-sm me-2"></span>
+                        <span>Importing...</span>
+                    }
+                    else
+                    {
+                        <span>📤 Import Rules</span>
+                    }
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-6">
+        @if (_result != null)
+        {
+            <div class="card h-100">
+                <div class="card-header">Import Results</div>
+                <div class="card-body">
+                    <div class="row g-3 mb-4">
+                        <div class="col-6">
+                            <div class="p-3 rounded text-center" style="background:#f0fff4;">
+                                <div style="font-size:2rem;font-weight:700;color:#276749;">@_result.SuccessCount</div>
+                                <div class="text-muted small">Successfully imported</div>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="p-3 rounded text-center" style="background:#fff5f5;">
+                                <div style="font-size:2rem;font-weight:700;color:#c53030;">@_result.FailureCount</div>
+                                <div class="text-muted small">Rows with errors</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    @if (_result.SuccessCount > 0)
+                    {
+                        <div class="alert alert-success py-2 mb-3">
+                            ✅ @_result.SuccessCount rule(s) imported successfully.
+                        </div>
+                    }
+
+                    @if (_result.Errors.Count > 0)
+                    {
+                        <h6 class="mb-2 text-danger">⚠️ Validation Errors</h6>
+                        <div style="max-height:300px;overflow-y:auto;">
+                            @foreach (var rowError in _result.Errors)
+                            {
+                                <div class="mb-2 p-2 bg-light rounded border-start border-danger border-3">
+                                    <div class="fw-semibold text-danger mb-1">Row @rowError.RowNumber</div>
+                                    @foreach (var msg in rowError.Messages)
+                                    {
+                                        <div class="small">• @msg</div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+        else if (!string.IsNullOrEmpty(_importError))
+        {
+            <div class="card h-100">
+                <div class="card-header">Error</div>
+                <div class="card-body">
+                    <div class="alert alert-danger">❌ @_importError</div>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="card h-100">
+                <div class="card-header">Instructions</div>
+                <div class="card-body">
+                    <p>Your Excel file should have the following format:</p>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-bordered small">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>A</th><th>B</th><th>C</th><th>D</th><th>E</th><th>F</th>
+                                </tr>
+                                <tr>
+                                    <th>From</th><th>To</th><th>Port</th><th>Desc.</th><th>Proto.</th><th>Date</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>server-a</td><td>db-1</td><td>5432</td><td>DB</td><td>TCP</td><td>2024-01-15</td>
+                                </tr>
+                                <tr>
+                                    <td>app-1</td><td>cache</td><td>6379</td><td>Redis</td><td>TCP</td><td>2024-02-01</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <p class="text-muted small mt-2">Row 1 is a header row and will be skipped during import.</p>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private IBrowserFile? _selectedFile;
+    private bool _importing = false;
+    private ImportResult? _result;
+    private string? _importError;
+
+    private void HandleFileSelected(InputFileChangeEventArgs e)
+    {
+        _selectedFile = e.File;
+        _result = null;
+        _importError = null;
+    }
+
+    private async Task ImportFile()
+    {
+        if (_selectedFile == null) return;
+        _importing = true;
+        _result = null;
+        _importError = null;
+
+        try
+        {
+            using var stream = _selectedFile.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
+            var (result, error) = await ImportSvc.ImportExcelAsync(stream, _selectedFile.Name);
+            if (result != null)
+                _result = result;
+            else
+                _importError = error ?? "Import failed.";
+        }
+        catch (Exception ex)
+        {
+            _importError = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            _importing = false;
+        }
+    }
+
+    private static string FormatBytes(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
+        return $"{bytes / (1024.0 * 1024):F1} MB";
+    }
+}

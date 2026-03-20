@@ -1,0 +1,30 @@
+## .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+.vscode/
+*.swp
+
+# Build artifacts
+**/bin/
+**/obj/
+
+# User secrets
+**/secrets.json
+
+# Runtime data
+**/data/
+git-config.json
+
+# Package directories
+**/node_modules/
+
+# Published output
+**/publish/
+**/wwwroot/_content/
+
+# Temp files
+*.tmp
+*.log

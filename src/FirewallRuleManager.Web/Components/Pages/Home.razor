@@ -1,0 +1,220 @@
+@page "/"
+@using FirewallRuleManager.Shared.DTOs
+@using FirewallRuleManager.Shared.Models
+@using FirewallRuleManager.Web.Services
+@inject FirewallRuleService RuleService
+@inject GitRepositoryService GitService
+@inject NavigationManager Nav
+@rendermode InteractiveServer
+
+<PageTitle>Dashboard - Firewall Rule Manager</PageTitle>
+
+@if (_showGitDialog)
+{
+    <div class="modal-overlay">
+        <div class="modal-dialog-custom">
+            <h4 class="mb-3">🔧 Set Up Git Repository</h4>
+            <p class="text-muted mb-4">
+                No Git repository is configured. Would you like to create one to store your firewall rules?
+            </p>
+            <div class="mb-3">
+                <label class="form-label">Repository Name <span class="text-danger">*</span></label>
+                <input class="form-control" @bind="_createRequest.RepositoryName" placeholder="firewall-rules" />
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Description</label>
+                <input class="form-control" @bind="_createRequest.Description" placeholder="Firewall rules repository" />
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Local Path</label>
+                <input class="form-control" @bind="_createRequest.LocalPath" placeholder="Leave empty for default" />
+            </div>
+            <hr />
+            <p class="text-muted small mb-2">Optional: Connect to GitHub to push rules automatically.</p>
+            <div class="mb-3">
+                <label class="form-label">GitHub Token</label>
+                <input type="password" class="form-control" @bind="_createRequest.GitHubToken" placeholder="ghp_..." />
+            </div>
+            <div class="mb-3">
+                <label class="form-label">GitHub Owner (username/org)</label>
+                <input class="form-control" @bind="_createRequest.GitHubOwner" placeholder="your-username" />
+            </div>
+            <div class="mb-3 form-check">
+                <input type="checkbox" class="form-check-input" id="privateRepo" @bind="_createRequest.IsPrivate" />
+                <label class="form-check-label" for="privateRepo">Private repository</label>
+            </div>
+            @if (!string.IsNullOrEmpty(_gitError))
+            {
+                <div class="alert alert-danger py-2">@_gitError</div>
+            }
+            <div class="d-flex gap-2 justify-content-end mt-3">
+                <button class="btn btn-secondary" @onclick="SkipGitSetup">Skip for now</button>
+                <button class="btn btn-primary" @onclick="CreateRepository" disabled="@_gitLoading">
+                    @if (_gitLoading) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                    Create Repository
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<div class="page-header">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div>
+            <h1>🛡️ Firewall Rule Manager</h1>
+            <p>Manage and track your firewall rules, backed by Git.</p>
+        </div>
+        <div>
+            @if (_gitConfig != null)
+            {
+                <span class="git-status-badge @(_gitConfig.IsConfigured ? "git-status-connected" : "git-status-disconnected")">
+                    @if (_gitConfig.IsConfigured) { <span>●</span> <span>Git Connected</span> }
+                    else { <span>○</span> <span>Git Not Configured</span> }
+                </span>
+            }
+        </div>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-sm-6 col-lg-3">
+        <div class="card stat-card">
+            <div class="stat-icon" style="background:#ebf8ff;">📋</div>
+            <div>
+                <div class="stat-value text-primary">@_rules.Count</div>
+                <div class="stat-label">Total Rules</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card stat-card">
+            <div class="stat-icon" style="background:#f0fff4;">🔵</div>
+            <div>
+                <div class="stat-value" style="color:#276749;">@_rules.Count(r => r.Protocol == "TCP")</div>
+                <div class="stat-label">TCP Rules</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card stat-card">
+            <div class="stat-icon" style="background:#fffbeb;">🟡</div>
+            <div>
+                <div class="stat-value" style="color:#b7791f;">@_rules.Count(r => r.Protocol == "UDP")</div>
+                <div class="stat-label">UDP Rules</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card stat-card">
+            <div class="stat-icon" style="background:#fff5f5;">🔴</div>
+            <div>
+                <div class="stat-value" style="color:#c53030;">@_rules.Count(r => r.Protocol == "ICMP" || r.Protocol == "ANY")</div>
+                <div class="stat-label">ICMP / ANY Rules</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span>Recent Firewall Rules</span>
+        <a href="firewall-rules" class="btn btn-light btn-sm">View All →</a>
+    </div>
+    <div class="card-body p-0">
+        @if (_loading)
+        {
+            <div class="text-center py-4">
+                <div class="spinner-border text-primary"></div>
+                <div class="mt-2 text-muted">Loading rules...</div>
+            </div>
+        }
+        else if (_rules.Count == 0)
+        {
+            <div class="text-center py-5 text-muted">
+                <div style="font-size: 3rem;">📋</div>
+                <h5>No firewall rules yet</h5>
+                <p>Get started by <a href="firewall-rules">adding a rule</a> or <a href="import">importing from Excel</a>.</p>
+            </div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th>From</th>
+                            <th>To</th>
+                            <th>Port</th>
+                            <th>Protocol</th>
+                            <th>Date</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var rule in _rules.OrderByDescending(r => r.RegistrationDate).Take(5))
+                        {
+                            <tr>
+                                <td>@rule.FromHostname</td>
+                                <td>@rule.ToHostname</td>
+                                <td><code>@rule.PortNumber</code></td>
+                                <td>
+                                    <span class="badge-protocol badge-@rule.Protocol.ToLower()">@rule.Protocol</span>
+                                </td>
+                                <td>@rule.RegistrationDate.ToString("yyyy-MM-dd")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private List<FirewallRule> _rules = new();
+    private GitRepositoryConfig? _gitConfig;
+    private bool _loading = true;
+    private bool _showGitDialog = false;
+    private bool _gitLoading = false;
+    private string? _gitError;
+    private CreateRepositoryRequest _createRequest = new() { RepositoryName = "firewall-rules", IsPrivate = true };
+
+    protected override async Task OnInitializedAsync()
+    {
+        _gitConfig = await GitService.GetStatusAsync();
+        if (_gitConfig != null && !_gitConfig.IsConfigured)
+        {
+            _showGitDialog = true;
+        }
+
+        try
+        {
+            _rules = await RuleService.GetAllAsync();
+        }
+        catch { }
+        finally { _loading = false; }
+    }
+
+    private async Task CreateRepository()
+    {
+        if (string.IsNullOrWhiteSpace(_createRequest.RepositoryName))
+        {
+            _gitError = "Repository name is required.";
+            return;
+        }
+        _gitLoading = true;
+        _gitError = null;
+        var (config, error) = await GitService.CreateRepositoryAsync(_createRequest);
+        _gitLoading = false;
+        if (config != null)
+        {
+            _gitConfig = config;
+            _showGitDialog = false;
+        }
+        else
+        {
+            _gitError = error ?? "Failed to create repository.";
+        }
+    }
+
+    private void SkipGitSetup() => _showGitDialog = false;
+}
