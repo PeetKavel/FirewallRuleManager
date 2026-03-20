@@ -3,7 +3,10 @@ namespace FirewallRuleManager.Shared.DTOs;
 public class GitRepositoryConfig
 {
     public string? RepositoryPath { get; set; }
+    /// <summary>Token is never serialized in API responses; use HasToken to check if configured.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
     public string? GitHubToken { get; set; }
+    public bool HasToken { get; set; }
     public string? GitHubOwner { get; set; }
     public string? GitHubRepoName { get; set; }
     public bool IsConfigured { get; set; }

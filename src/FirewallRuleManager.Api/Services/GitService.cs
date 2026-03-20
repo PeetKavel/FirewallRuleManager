@@ -25,7 +25,8 @@ public class GitService
         return new GitRepositoryConfig
         {
             RepositoryPath = path,
-            GitHubToken = token,
+            GitHubToken = token,    // not serialized by API
+            HasToken = !string.IsNullOrEmpty(token),
             GitHubOwner = owner,
             GitHubRepoName = repoName,
             IsConfigured = !string.IsNullOrEmpty(path) && Directory.Exists(path) && LibGit2Sharp.Repository.IsValid(path)
@@ -91,7 +92,8 @@ public class GitService
         return new GitRepositoryConfig
         {
             RepositoryPath = localPath,
-            GitHubToken = request.GitHubToken,
+            GitHubToken = request.GitHubToken,  // not serialized by API
+            HasToken = !string.IsNullOrEmpty(request.GitHubToken),
             GitHubOwner = request.GitHubOwner,
             GitHubRepoName = request.RepositoryName,
             IsConfigured = true

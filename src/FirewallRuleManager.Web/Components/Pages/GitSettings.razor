@@ -57,7 +57,7 @@
                             <tr>
                                 <th class="text-muted">GitHub Token</th>
                                 <td>
-                                    @if (!string.IsNullOrEmpty(_config.GitHubToken))
+                                    @if (_config.HasToken)
                                     { <span class="badge bg-success">Configured</span> }
                                     else
                                     { <span class="badge bg-secondary">Not set</span> }
