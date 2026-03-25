@@ -17,7 +17,7 @@
 
 .top-row {
     min-height: 3.5rem;
-    background: linear-gradient(180deg, #1a365d 0%, #2a4a7f 100%);
+    background: linear-gradient(180deg, #1F1F1F 0%, #2C2C2C 100%);
 }
 
 .navbar-brand {
@@ -64,7 +64,7 @@
 
 .nav-scrollable {
     display: none;
-    background: linear-gradient(180deg, #1a365d 0%, #2a4a7f 100%);
+    background: linear-gradient(180deg, #1F1F1F 0%, #2C2C2C 100%);
     min-height: calc(100vh - 3.5rem);
 }
 
