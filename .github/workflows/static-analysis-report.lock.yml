@@ -364,7 +364,7 @@ jobs:
             const determineAutomaticLockdown = require('${{ runner.temp }}/gh-aw/actions/determine_automatic_lockdown.cjs');
             await determineAutomaticLockdown(github, context, core);
       - name: Download container images
-        run: bash ${RUNNER_TEMP}/gh-aw/actions/download_docker_images.sh alpine:latest ghcr.io/github/gh-aw-firewall/agent:0.25.1 ghcr.io/github/gh-aw-firewall/api-proxy:0.25.1 ghcr.io/github/gh-aw-firewall/squid:0.25.1 ghcr.io/github/gh-aw-mcpg:v0.2.6 ghcr.io/github/github-mcp-server:v0.32.0 node:lts-alpine
+        run: bash ${RUNNER_TEMP}/gh-aw/actions/download_docker_images.sh ghcr.io/github/gh-aw-firewall/agent:0.25.1 ghcr.io/github/gh-aw-firewall/api-proxy:0.25.1 ghcr.io/github/gh-aw-firewall/squid:0.25.1 ghcr.io/github/gh-aw-mcpg:v0.2.6 ghcr.io/github/github-mcp-server:v0.32.0 node:lts-alpine
       - name: Install gh-aw extension
         env:
           GH_TOKEN: ${{ secrets.GH_AW_GITHUB_MCP_SERVER_TOKEN || secrets.GH_AW_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
@@ -566,27 +566,6 @@ jobs:
           cat << GH_AW_MCP_CONFIG_5b910c8128361a70_EOF | bash ${RUNNER_TEMP}/gh-aw/actions/start_mcp_gateway.sh
           {
             "mcpServers": {
-              "agenticworkflows": {
-                "type": "stdio",
-                "container": "alpine:latest",
-                "entrypoint": "${RUNNER_TEMP}/gh-aw/gh-aw",
-                "entrypointArgs": ["mcp-server", "--validate-actor"],
-                "mounts": ["${RUNNER_TEMP}/gh-aw:${RUNNER_TEMP}/gh-aw:ro", "/usr/bin/gh:/usr/bin/gh:ro", "\${GITHUB_WORKSPACE}:\${GITHUB_WORKSPACE}:rw", "/tmp/gh-aw:/tmp/gh-aw:rw"],
-                "args": ["--network", "host", "-w", "\${GITHUB_WORKSPACE}"],
-                "env": {
-                  "DEBUG": "*",
-                  "GITHUB_TOKEN": "\${GITHUB_TOKEN}",
-                  "GITHUB_ACTOR": "\${GITHUB_ACTOR}",
-                  "GITHUB_REPOSITORY": "\${GITHUB_REPOSITORY}"
-                },
-                "guard-policies": {
-                  "write-sink": {
-                    "accept": [
-                      "*"
-                    ]
-                  }
-                }
-              },
               "github": {
                 "type": "stdio",
                 "container": "ghcr.io/github/github-mcp-server:v0.32.0",
