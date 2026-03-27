@@ -10,7 +10,6 @@ permissions:
   pull-requests: read
 engine: copilot
 tools:
-  agentic-workflows:
   github:
    toolsets:
       - default
