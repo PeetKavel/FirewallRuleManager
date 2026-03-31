@@ -70,13 +70,33 @@ public partial class CreateRepositoryRequest : IValidatableObject
     private static bool ContainsSensitivePath(string fullPath)
     {
         var normalized = fullPath.Replace('\\', '/').TrimEnd('/').ToLowerInvariant();
-        string[] sensitiveRoots = { "/etc", "/var", "/usr", "/bin", "/sbin", "/boot", "/proc", "/sys", "/dev",
-                                     "c:/windows", "c:/program files", "c:/program files (x86)" };
-        foreach (var root in sensitiveRoots)
+
+        // Block UNC paths
+        if (normalized.StartsWith("//"))
+            return true;
+
+        // Block well-known sensitive Linux directories
+        string[] sensitivePosixRoots = { "/etc", "/var", "/usr", "/bin", "/sbin", "/boot", "/proc", "/sys", "/dev" };
+        foreach (var root in sensitivePosixRoots)
         {
             if (normalized.Equals(root) || normalized.StartsWith(root + "/"))
                 return true;
         }
+
+        // Block well-known sensitive Windows directories using environment where available
+        var windowsDir = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+        var programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+        var programFilesX86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
+        var systemDir = Environment.GetFolderPath(Environment.SpecialFolder.System);
+
+        foreach (var dir in new[] { windowsDir, programFiles, programFilesX86, systemDir })
+        {
+            if (string.IsNullOrEmpty(dir)) continue;
+            var normalizedDir = dir.Replace('\\', '/').TrimEnd('/').ToLowerInvariant();
+            if (normalized.Equals(normalizedDir) || normalized.StartsWith(normalizedDir + "/"))
+                return true;
+        }
+
         return false;
     }
 }

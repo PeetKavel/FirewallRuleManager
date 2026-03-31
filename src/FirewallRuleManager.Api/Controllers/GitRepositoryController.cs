@@ -29,9 +29,6 @@ public class GitRepositoryController : ControllerBase
         if (!ModelState.IsValid)
             return BadRequest(ModelState);
 
-        if (string.IsNullOrWhiteSpace(request.RepositoryName))
-            return BadRequest("Repository name is required.");
-
         try
         {
             var config = await _gitService.CreateRepositoryAsync(request);
