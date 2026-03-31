@@ -1,5 +1,6 @@
 using FirewallRuleManager.Api.Data;
 using FirewallRuleManager.Api.Services;
+using Microsoft.AspNetCore.DataProtection;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -13,6 +14,10 @@ if (File.Exists(gitConfigPath))
 // Add services to the container.
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
+
+builder.Services.AddDataProtection()
+    .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(AppContext.BaseDirectory, "data", "keys")))
+    .SetApplicationName("FirewallRuleManager");
 
 builder.Services.AddSingleton<FirewallRuleRepository>();
 builder.Services.AddSingleton<GitService>();

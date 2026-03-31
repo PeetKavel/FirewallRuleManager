@@ -9,10 +9,12 @@ namespace FirewallRuleManager.Api.Controllers;
 public class GitRepositoryController : ControllerBase
 {
     private readonly GitService _gitService;
+    private readonly ILogger<GitRepositoryController> _logger;
 
-    public GitRepositoryController(GitService gitService)
+    public GitRepositoryController(GitService gitService, ILogger<GitRepositoryController> logger)
     {
         _gitService = gitService;
+        _logger = logger;
     }
 
     [HttpGet("status")]
@@ -24,6 +26,9 @@ public class GitRepositoryController : ControllerBase
     [HttpPost("create")]
     public async Task<ActionResult<GitRepositoryConfig>> Create([FromBody] CreateRepositoryRequest request)
     {
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
+
         if (string.IsNullOrWhiteSpace(request.RepositoryName))
             return BadRequest("Repository name is required.");
 
@@ -34,6 +39,7 @@ public class GitRepositoryController : ControllerBase
         }
         catch (InvalidOperationException ex)
         {
+            _logger.LogError(ex, "Failed to create repository");
             return BadRequest(ex.Message);
         }
     }
