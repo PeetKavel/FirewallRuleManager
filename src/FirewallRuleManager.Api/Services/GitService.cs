@@ -1,5 +1,6 @@
 using FirewallRuleManager.Shared.DTOs;
 using LibGit2Sharp;
+using Microsoft.AspNetCore.DataProtection;
 using Octokit;
 
 namespace FirewallRuleManager.Api.Services;
@@ -8,25 +9,32 @@ public class GitService
 {
     private readonly IConfiguration _configuration;
     private readonly ILogger<GitService> _logger;
+    private readonly IDataProtector _protector;
 
-    public GitService(IConfiguration configuration, ILogger<GitService> logger)
+    public GitService(IConfiguration configuration, ILogger<GitService> logger, IDataProtectionProvider dataProtectionProvider)
     {
         _configuration = configuration;
         _logger = logger;
+        _protector = dataProtectionProvider.CreateProtector("GitService.Token");
     }
 
     public GitRepositoryConfig GetConfig()
     {
         var path = _configuration["Git:RepositoryPath"];
-        var token = _configuration["Git:GitHubToken"];
+        var encryptedToken = _configuration["Git:GitHubToken"];
         var owner = _configuration["Git:GitHubOwner"];
         var repoName = _configuration["Git:GitHubRepoName"];
+
+        bool hasToken = false;
+        if (!string.IsNullOrEmpty(encryptedToken))
+        {
+            hasToken = TryUnprotectToken(encryptedToken, out _);
+        }
 
         return new GitRepositoryConfig
         {
             RepositoryPath = path,
-            GitHubToken = token,    // not serialized by API
-            HasToken = !string.IsNullOrEmpty(token),
+            HasToken = hasToken,
             GitHubOwner = owner,
             GitHubRepoName = repoName,
             IsConfigured = !string.IsNullOrEmpty(path) && Directory.Exists(path) && LibGit2Sharp.Repository.IsValid(path)
@@ -41,6 +49,13 @@ public class GitService
 
     public async Task<GitRepositoryConfig> CreateRepositoryAsync(CreateRepositoryRequest request)
     {
+        // Validate GitHub owner and repo name format to prevent URL injection
+        if (!string.IsNullOrEmpty(request.GitHubOwner) && !System.Text.RegularExpressions.Regex.IsMatch(request.GitHubOwner, @"^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$"))
+            throw new InvalidOperationException("GitHub owner contains invalid characters.");
+
+        if (!System.Text.RegularExpressions.Regex.IsMatch(request.RepositoryName, @"^[a-zA-Z0-9._-]+$"))
+            throw new InvalidOperationException("Repository name contains invalid characters.");
+
         // Create GitHub repository if token provided
         if (!string.IsNullOrEmpty(request.GitHubToken) && !string.IsNullOrEmpty(request.GitHubOwner))
         {
@@ -62,14 +77,14 @@ public class GitService
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to create GitHub repository");
-                throw new InvalidOperationException($"Failed to create GitHub repository: {ex.Message}", ex);
+                throw new InvalidOperationException("Failed to create GitHub repository. Please verify your token and permissions.", ex);
             }
         }
 
         // Initialize local repository
         var localPath = string.IsNullOrEmpty(request.LocalPath)
             ? Path.Combine(AppContext.BaseDirectory, "data", "git")
-            : request.LocalPath;
+            : Path.GetFullPath(request.LocalPath);
 
         if (!Directory.Exists(localPath))
             Directory.CreateDirectory(localPath);
@@ -80,19 +95,25 @@ public class GitService
             _logger.LogInformation("Initialized local git repository at {Path}", localPath);
         }
 
+        // Encrypt the token before storing
+        string? encryptedToken = null;
+        if (!string.IsNullOrEmpty(request.GitHubToken))
+        {
+            encryptedToken = _protector.Protect(request.GitHubToken);
+        }
+
         // Update configuration
         _configuration["Git:RepositoryPath"] = localPath;
-        _configuration["Git:GitHubToken"] = request.GitHubToken;
+        _configuration["Git:GitHubToken"] = encryptedToken;
         _configuration["Git:GitHubOwner"] = request.GitHubOwner;
         _configuration["Git:GitHubRepoName"] = request.RepositoryName;
 
         // Persist config to appsettings
-        await PersistConfigAsync(localPath, request.GitHubToken, request.GitHubOwner, request.RepositoryName);
+        await PersistConfigAsync(localPath, encryptedToken, request.GitHubOwner, request.RepositoryName);
 
         return new GitRepositoryConfig
         {
             RepositoryPath = localPath,
-            GitHubToken = request.GitHubToken,  // not serialized by API
             HasToken = !string.IsNullOrEmpty(request.GitHubToken),
             GitHubOwner = request.GitHubOwner,
             GitHubRepoName = request.RepositoryName,
@@ -132,10 +153,10 @@ public class GitService
             _logger.LogInformation("Committed changes: {Message}", commitMessage);
 
             // Push to remote if configured
-            var token = _configuration["Git:GitHubToken"];
-            if (!string.IsNullOrEmpty(token))
+            var encryptedToken = _configuration["Git:GitHubToken"];
+            if (!string.IsNullOrEmpty(encryptedToken) && TryUnprotectToken(encryptedToken, out var token))
             {
-                await PushToGitHubAsync(repo, token);
+                await PushToGitHubAsync(repo, token!);
             }
         }
         catch (Exception ex)
@@ -155,6 +176,14 @@ public class GitService
                 var repoName = _configuration["Git:GitHubRepoName"];
                 if (!string.IsNullOrEmpty(owner) && !string.IsNullOrEmpty(repoName))
                 {
+                    // Validate owner and repo name to prevent URL injection
+                    if (!System.Text.RegularExpressions.Regex.IsMatch(owner, @"^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$") ||
+                        !System.Text.RegularExpressions.Regex.IsMatch(repoName, @"^[a-zA-Z0-9._-]+$"))
+                    {
+                        _logger.LogWarning("Invalid GitHub owner or repository name format, skipping remote setup");
+                        return Task.CompletedTask;
+                    }
+
                     repo.Network.Remotes.Add("origin", $"https://github.com/{owner}/{repoName}.git");
                     remote = repo.Network.Remotes["origin"];
                 }
@@ -181,26 +210,18 @@ public class GitService
         return Task.CompletedTask;
     }
 
-    private async Task PersistConfigAsync(string repoPath, string? token, string? owner, string? repoName)
+    private async Task PersistConfigAsync(string repoPath, string? encryptedToken, string? owner, string? repoName)
     {
-        var appSettingsPath = Path.Combine(AppContext.BaseDirectory, "appsettings.json");
-        if (!File.Exists(appSettingsPath))
-            return;
-
         try
         {
-            var json = await File.ReadAllTextAsync(appSettingsPath);
-            using var doc = System.Text.Json.JsonDocument.Parse(json);
-            var root = doc.RootElement.Clone();
-
-            // We'll use a simple approach - write to a separate config file
+            // Write to a separate config file (token is already encrypted)
             var gitConfigPath = Path.Combine(AppContext.BaseDirectory, "git-config.json");
             var gitConfig = new
             {
                 Git = new
                 {
                     RepositoryPath = repoPath,
-                    GitHubToken = token,
+                    GitHubToken = encryptedToken,
                     GitHubOwner = owner,
                     GitHubRepoName = repoName
                 }
@@ -212,6 +233,23 @@ public class GitService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to persist git config");
+        }
+    }
+
+    private bool TryUnprotectToken(string encryptedToken, out string? token)
+    {
+        try
+        {
+            token = _protector.Unprotect(encryptedToken);
+            return !string.IsNullOrEmpty(token);
+        }
+        catch (Exception)
+        {
+            // Token may be stored in plaintext from before encryption was added,
+            // or the key may have changed. Log and treat as unavailable.
+            _logger.LogWarning("Failed to decrypt stored token. It may need to be reconfigured.");
+            token = null;
+            return false;
         }
     }
 }
